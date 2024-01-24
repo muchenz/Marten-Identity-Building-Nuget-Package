@@ -11,7 +11,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Identity.Marten", "lib\Iden
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "lib", "lib", "{3EF66CD4-039B-4F43-BF90-0740FA776BA7}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Identity.Marten.Tests", "Identity.Marten.Tests\Identity.Marten.Tests.csproj", "{55F4AF69-B83A-49C5-997B-FB350C2EDC3F}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Identity.Marten.Tests", "Identity.Marten.Tests\Identity.Marten.Tests.csproj", "{55F4AF69-B83A-49C5-997B-FB350C2EDC3F}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
