@@ -10,6 +10,10 @@
 *.userosscache
 *.sln.docstates
 
+secret_nuget_key.txt
+publish.yaml
+.output
+
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
 
