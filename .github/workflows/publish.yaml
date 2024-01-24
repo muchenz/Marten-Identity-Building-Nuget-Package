@@ -1,0 +1,15 @@
+name: Publish Nuget Package
+
+on: workflow_dispatch
+
+jobs:
+  publish_nuget_package:
+    name: Publish
+    runs-on: ubuntu-latest
+    steps:
+    - name: Pack
+      run: dotnet pack ./lib/Identity.Marten/ -c Release -o .output
+    - name: Publish 
+      env: API_KEY:${{ sectrets.NUGET_MARTEN_IDENTITY_KEY }}
+      run: dotnet nuget push ./lib/Identity.Marten/**/*.nupkg --api-key $API_KEY --source https://api.nuget.org/v3/index.json
+
