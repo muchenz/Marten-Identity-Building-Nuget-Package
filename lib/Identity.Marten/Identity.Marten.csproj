@@ -7,7 +7,7 @@
 
 
 	  <PackageId>Test.Identity.Marten</PackageId>
-	  <Version>{{ version }}</Version>
+	  <Version><!--{{ version }}--></Version>
 	  <Authors>muchenz</Authors>
 	  <Description>For test Nuget Package</Description>
   </PropertyGroup>
