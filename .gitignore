@@ -11,6 +11,7 @@
 *.sln.docstates
 
 secret_nuget_key.txt
+replace.txt
 .output
 
 # User-specific files (MonoDevelop/Xamarin Studio)
