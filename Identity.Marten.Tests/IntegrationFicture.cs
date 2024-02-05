@@ -27,7 +27,7 @@ public class IntegrationFicture : IAsyncLifetime
         .WithDatabase("identity_matren_test")
         .WithUsername("postgres")
         .WithPassword("postgres")
-        .WithPortBinding(randomPort, 5432)
+        .WithPortBinding(49111, 5432)
         .WithImage("postgres:15.1")
         .Build();
 

@@ -1,44 +1,59 @@
-﻿using Marten;
+﻿using JasperFx.CodeGeneration.Frames;
+using Marten;
 using Marten.Linq.MatchesSql;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.Extensions.DependencyInjection;
+using System.Data;
 
 namespace Identity.Marten;
 
-public static class IdentityBuilderExtensions
+public class UserRole<TKey>
 {
-    public static IdentityBuilder AddMartenStore(this IdentityBuilder identityBuilder)
-    {
-        var userStoreType = typeof(MartenStore<,>).MakeGenericType(
-            identityBuilder.UserType,
-            identityBuilder.UserType.GenericTypeArguments.Length == 1
-            ? identityBuilder.UserType.GenericTypeArguments[0]
-            : identityBuilder.UserType.BaseType?.GenericTypeArguments[0]
-            ?? throw new ArgumentException("bad user type; cudn't find key")
-            );
-
-        // var roleStoreType = typeof(Role)
-
-        identityBuilder.Services.AddScoped(typeof(IUserStore<>).MakeGenericType(identityBuilder.UserType), userStoreType);
-        identityBuilder.Services.AddScoped<IRoleStore<IdentityRole>, MockRoleStore>();
-
-        return identityBuilder;
-
-    }
+    public int Id { get; set; }
+    public TKey UserId { get; set; }
+    public string RoleId { get; set; }
 }
 
-
-public class MartenStore<TUser, TKey> : IUserStore<TUser> where TUser : IdentityUser<TKey> where TKey : IEquatable<TKey>
+public class MartenUserStore<TUser, TRole, TKey> : IUserStore<TUser>, IUserRoleStore<TUser>
+    where TUser : IdentityUser<TKey>
+    where TKey : IEquatable<TKey>
+    where TRole : IdentityRole
 {
     private readonly IDocumentSession _documentSession;
+    private readonly IRoleStore<TRole> _roleStore;
 
-    public MartenStore(IDocumentSession documentSession)
+    public MartenUserStore(IDocumentSession documentSession, IRoleStore<TRole> roleStore)
     {
         _documentSession = documentSession;
+        _roleStore = roleStore;
+    }
+
+    public async Task AddToRoleAsync(TUser user, string roleName, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(user, nameof(user));
+        ArgumentNullException.ThrowIfNull(roleName, nameof(roleName));
+
+        var role = await _roleStore.FindByNameAsync(roleName, cancellationToken);
+        if (role is null)
+        {
+            throw new Exception($"Role name {roleName} doesn't exist");
+        }
+
+        _documentSession.Store(new UserRole<TKey>
+        {
+            UserId = user.Id,
+            RoleId = role.Id,
+
+        });
+
+        await _documentSession.SaveChangesAsync(cancellationToken);
+
     }
 
     public async Task<IdentityResult> CreateAsync(TUser user, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(user, nameof(user));
+
+
         _documentSession.Insert(user);
         await _documentSession.SaveChangesAsync(cancellationToken);
         return IdentityResult.Success;
@@ -62,11 +77,11 @@ public class MartenStore<TUser, TKey> : IUserStore<TUser> where TUser : Identity
         if (typeof(TKey) == typeof(string))
         {
             return await _documentSession.Query<TUser>()
-                .FirstOrDefaultAsync(a => a.Id.MatchesSql("data ->> 'Id' = ?", userId), token: cancellationToken);
+                .FirstOrDefaultAsync(a => a.MatchesSql("data ->> 'Id' = ?", userId), token: cancellationToken);
 
-        //    return await _documentSession.Query<TUser>()
-        //       .FirstOrDefaultAsync(a => a.Id.Equals(userId), token: cancellationToken);
-        
+            //    return await _documentSession.Query<TUser>()
+            //       .FirstOrDefaultAsync(a => a.Id.Equals(userId), token: cancellationToken);
+
         }
 
         if (typeof(TKey) == typeof(Guid))
@@ -81,7 +96,7 @@ public class MartenStore<TUser, TKey> : IUserStore<TUser> where TUser : Identity
             //    .FirstOrDefaultAsync(a => a.Id.Equals(guidId), token: cancellationToken);
 
             return await _documentSession.Query<TUser>()
-               .FirstOrDefaultAsync(a => a.Id.MatchesSql("data ->> 'Id' = ?", guidId), token: cancellationToken);
+               .FirstOrDefaultAsync(a => a.MatchesSql("data ->> 'Id' = ?", guidId), token: cancellationToken);
         }
 
         if (typeof(TKey) == typeof(Guid))
@@ -96,7 +111,7 @@ public class MartenStore<TUser, TKey> : IUserStore<TUser> where TUser : Identity
             //    .FirstOrDefaultAsync(a => a.Id.Equals(intId), token: cancellationToken);
 
             return await _documentSession.Query<TUser>()
-               .FirstOrDefaultAsync(a => a.Id.MatchesSql("data ->> 'Id' = ?", intId), token: cancellationToken);
+               .FirstOrDefaultAsync(a => a.MatchesSql("data ->> 'Id' = ?", intId), token: cancellationToken);
         }
 
         if (typeof(TKey) == typeof(Guid))
@@ -111,7 +126,8 @@ public class MartenStore<TUser, TKey> : IUserStore<TUser> where TUser : Identity
             //    .FirstOrDefaultAsync(a => a.Id.Equals(longId), token: cancellationToken);
 
             return await _documentSession.Query<TUser>()
-               .FirstOrDefaultAsync(a => a.Id.MatchesSql("data ->> 'Id' = ?", longId), token: cancellationToken);
+               .FirstOrDefaultAsync(a => a.MatchesSql("data ->> 'Id' = ?", longId), token: cancellationToken);
+
         }
 
         throw new ArgumentException($"unsuported type key type: {typeof(TKey).FullName}");
@@ -126,7 +142,24 @@ public class MartenStore<TUser, TKey> : IUserStore<TUser> where TUser : Identity
 
     public Task<string?> GetNormalizedUserNameAsync(TUser user, CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        return Task.FromResult(user.NormalizedUserName);
+    }
+
+    public async Task<IList<string>> GetRolesAsync(TUser user, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(user, nameof(user));
+
+        var identityRoles = new List<IdentityRole>();
+
+        var userRoles = await _documentSession.Query<UserRole<TKey>>()
+            .Include<IdentityRole>(a => a.RoleId, identityRoles.Add)
+            .Where(a => a.MatchesSql("data ->> 'UserId' = ?", user.Id))
+            .ToListAsync();
+
+        var roleNames = identityRoles.Select(a => a.Name).ToList();
+
+        return roleNames!;
+
     }
 
     public Task<string> GetUserIdAsync(TUser user, CancellationToken cancellationToken)
@@ -137,6 +170,72 @@ public class MartenStore<TUser, TKey> : IUserStore<TUser> where TUser : Identity
     public Task<string?> GetUserNameAsync(TUser user, CancellationToken cancellationToken)
     {
         return Task.FromResult(user.UserName);
+    }
+
+    public async Task<IList<TUser>> GetUsersInRoleAsync(string roleName, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(roleName, nameof(roleName));
+
+
+        var role = await _roleStore.FindByNameAsync(roleName, cancellationToken);
+        if (role is null)
+        {
+            throw new Exception($"Role name {roleName} doesn't exist");
+        }
+
+        var userList = new List<TUser>();
+
+        var userRoles = await _documentSession.Query<UserRole<TKey>>()
+           .Include<TUser>(a=>a.UserId, userList.Add)
+           .Where(a => a.RoleId == role.Id)
+           .ToListAsync();
+
+        return userList;
+
+    }
+
+    public async Task<bool> IsInRoleAsync(TUser user, string roleName, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(user, nameof(user));
+        ArgumentNullException.ThrowIfNull(roleName, nameof(roleName));
+
+        var role = await _roleStore.FindByNameAsync(roleName, cancellationToken);
+        
+        if (role is null)
+        {
+            return false;
+        }
+
+        var isUserRole = await _documentSession.Query<UserRole<TKey>>()
+            .AnyAsync(a => a.RoleId == role.Id && a.MatchesSql("data ->> 'UserId' = ?", user.Id));
+
+        return isUserRole;
+
+    }
+
+    public async Task RemoveFromRoleAsync(TUser user, string roleName, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(user, nameof(user));
+        ArgumentNullException.ThrowIfNull(roleName, nameof(roleName));
+
+        var role = await _roleStore.FindByNameAsync(roleName, cancellationToken);
+        if (role is null)
+        {
+            throw new Exception($"Role name {roleName} doesn't exist");
+        }
+
+        var userRole = await _documentSession.Query<UserRole<TKey>>()
+            .FirstOrDefaultAsync(a => a.RoleId == role.Id && a.MatchesSql("data ->> 'UserId' = ?", user.Id));
+
+
+        if (userRole is null)
+        {
+            return;
+        }
+
+        _documentSession.Delete(userRole);
+
+        await _documentSession.SaveChangesAsync(cancellationToken);
     }
 
     public Task SetNormalizedUserNameAsync(TUser user, string? normalizedName, CancellationToken cancellationToken)
@@ -158,63 +257,5 @@ public class MartenStore<TUser, TKey> : IUserStore<TUser> where TUser : Identity
         _documentSession.Update(user);
         await _documentSession.SaveChangesAsync(cancellationToken);
         return IdentityResult.Success;
-    }
-}
-
-public class MockRoleStore : IRoleStore<IdentityRole>
-{
-    public Task<IdentityResult> CreateAsync(IdentityRole role, CancellationToken cancellationToken)
-    {
-        throw new NotImplementedException();
-    }
-
-    public Task<IdentityResult> DeleteAsync(IdentityRole role, CancellationToken cancellationToken)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void Dispose()
-    {
-        throw new NotImplementedException();
-    }
-
-    public Task<IdentityRole?> FindByIdAsync(string roleId, CancellationToken cancellationToken)
-    {
-        throw new NotImplementedException();
-    }
-
-    public Task<IdentityRole?> FindByNameAsync(string normalizedRoleName, CancellationToken cancellationToken)
-    {
-        throw new NotImplementedException();
-    }
-
-    public Task<string?> GetNormalizedRoleNameAsync(IdentityRole role, CancellationToken cancellationToken)
-    {
-        throw new NotImplementedException();
-    }
-
-    public Task<string> GetRoleIdAsync(IdentityRole role, CancellationToken cancellationToken)
-    {
-        throw new NotImplementedException();
-    }
-
-    public Task<string?> GetRoleNameAsync(IdentityRole role, CancellationToken cancellationToken)
-    {
-        throw new NotImplementedException();
-    }
-
-    public Task SetNormalizedRoleNameAsync(IdentityRole role, string? normalizedName, CancellationToken cancellationToken)
-    {
-        throw new NotImplementedException();
-    }
-
-    public Task SetRoleNameAsync(IdentityRole role, string? roleName, CancellationToken cancellationToken)
-    {
-        throw new NotImplementedException();
-    }
-
-    public Task<IdentityResult> UpdateAsync(IdentityRole role, CancellationToken cancellationToken)
-    {
-        throw new NotImplementedException();
     }
 }
