@@ -17,6 +17,6 @@ jobs:
         dotnet build --no-restore
     - name: Test
       run: |
-        dotnet restore
+        dotnet test --no-build
   
 # github.refname is tag from commit 
